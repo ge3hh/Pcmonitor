@@ -117,12 +117,24 @@ class ProcessMonitor:
             details = {
                 'pid': pid,
                 'name': proc.name(),
-                'exe': proc.exe(),
-                'cmdline': ' '.join(proc.cmdline()),
                 'status': proc.status(),
                 'create_time': proc.create_time(),
-                'username': proc.username(),
             }
+
+            try:
+                details['exe'] = proc.exe()
+            except (psutil.AccessDenied, OSError):
+                details['exe'] = ''
+
+            try:
+                details['cmdline'] = ' '.join(proc.cmdline())
+            except (psutil.AccessDenied, OSError):
+                details['cmdline'] = ''
+
+            try:
+                details['username'] = proc.username()
+            except psutil.AccessDenied:
+                details['username'] = ''
             
             # CPU 信息
             with proc.oneshot():

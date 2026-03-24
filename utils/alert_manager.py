@@ -6,15 +6,16 @@ import time
 import threading
 import winsound
 from typing import Dict, Callable, Optional
-from PyQt5.QtWidgets import QMessageBox
-from PyQt5.QtCore import QObject, pyqtSignal
+from PySide6.QtWidgets import QMessageBox
+from PySide6.QtCore import QObject, Signal
 
 
 class AlertManager(QObject):
     """告警管理器"""
     
     # 告警信号
-    alert_triggered = pyqtSignal(str, str)  # 告警类型, 告警消息
+    alert_triggered = Signal(str, str)  # 告警类型, 告警消息
+    popup_requested = Signal(str, str, str)  # 级别, 消息, 标题 (用于在主线程安全显示弹窗)
     
     # 告警级别
     LEVEL_WARNING = 'warning'  # 警告 (>70%)
@@ -111,30 +112,32 @@ class AlertManager(QObject):
     
     def trigger_alert(self, alert_info: Dict, parent_widget=None):
         """触发告警
-        
+
         Args:
             alert_info: 告警信息字典
             parent_widget: 父窗口，用于显示弹窗
         """
-        alert_key = f"{alert_info['type']}_{alert_info['level']}"
-        
+        # 使用资源类型作为冷却 key，避免 warning→danger 切换时重置冷却
+        alert_key = alert_info['type']
+
         # 检查冷却时间
         if not self.should_alert(alert_key):
             return
-        
+
         level = alert_info['level']
         message = alert_info['message']
-        
+
         # 发射信号
         self.alert_triggered.emit(alert_info['type'], message)
-        
+
         # 播放声音
         if self.sound_enabled:
             self.play_alert_sound(level)
-        
-        # 显示弹窗
-        if self.popup_enabled and parent_widget:
-            self.show_alert_popup(level, message, parent_widget)
+
+        # 通过信号请求弹窗，确保在主线程中安全显示
+        if self.popup_enabled:
+            title = '⚠️ 资源告警 - 危险' if level == self.LEVEL_DANGER else '⚠️ 资源告警 - 警告'
+            self.popup_requested.emit(level, message, title)
     
     def play_alert_sound(self, level: str):
         """播放告警声音"""
@@ -146,17 +149,17 @@ class AlertManager(QObject):
                 # 警告级别 - 普通提示音
                 winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
         except Exception as e:
-            print(f"播放告警声音失败: {e}")
-    
-    def show_alert_popup(self, level: str, message: str, parent_widget):
-        """显示告警弹窗"""
+            logger.error("播放告警声音失败: %s", e)
+
+    def show_alert_popup(self, level: str, message: str, parent_widget=None):
+        """显示告警弹窗 (应通过信号在主线程中调用)"""
         try:
             if level == self.LEVEL_DANGER:
                 QMessageBox.critical(parent_widget, '⚠️ 资源告警 - 危险', message)
             else:
                 QMessageBox.warning(parent_widget, '⚠️ 资源告警 - 警告', message)
         except Exception as e:
-            print(f"显示告警弹窗失败: {e}")
+            logger.error("显示告警弹窗失败: %s", e)
     
     def check_all_monitors(self, data: Dict, parent_widget=None):
         """检查所有监控项

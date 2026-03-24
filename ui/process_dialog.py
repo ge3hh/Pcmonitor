@@ -2,13 +2,13 @@
 进程管理对话框
 """
 import sys
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QPushButton, QLineEdit, QLabel, QComboBox, QMessageBox, QHeaderView,
     QMenu, QAction, QAbstractItemView
 )
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal
-from PyQt5.QtGui import QColor
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QColor
 
 from core.process_monitor import ProcessMonitor
 
@@ -230,8 +230,16 @@ class ProcessDialog(QDialog):
             # 状态
             self.process_table.setItem(i, 5, QTableWidgetItem(proc.status))
         
-        # 更新状态栏
-        self.status_label.setText(f'显示进程: {len(processes)}')
+        # 更新状态栏 - 显示总进程数
+        try:
+            import psutil
+            total_count = len(psutil.pids())
+        except Exception:
+            total_count = len(processes)
+        if len(processes) < total_count:
+            self.status_label.setText(f'显示进程: {len(processes)} / 共 {total_count} 个')
+        else:
+            self.status_label.setText(f'进程数: {len(processes)}')
         
     def show_context_menu(self, position):
         """显示右键菜单"""
@@ -256,7 +264,7 @@ class ProcessDialog(QDialog):
         kill_action.triggered.connect(self.kill_selected_process)
         menu.addAction(kill_action)
         
-        menu.exec_(self.process_table.viewport().mapToGlobal(position))
+        menu.exec(self.process_table.viewport().mapToGlobal(position))
         
     def show_process_detail(self):
         """显示进程详情"""
@@ -309,11 +317,11 @@ PID: {details['pid']}<br>
         reply = QMessageBox.question(
             self, '确认',
             f'确定要结束进程 "{name}" (PID: {pid}) 吗？',
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
         )
-        
-        if reply == QMessageBox.Yes:
+
+        if reply == QMessageBox.StandardButton.Yes:
             if self.monitor.kill_process(pid):
                 QMessageBox.information(self, '成功', f'进程 "{name}" 已结束')
                 self.refresh_process_list()

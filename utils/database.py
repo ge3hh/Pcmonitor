@@ -5,9 +5,12 @@
 import sqlite3
 import os
 import time
+import logging
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
-from threading import Lock
+from threading import RLock
+
+logger = logging.getLogger(__name__)
 
 
 class HistoryDatabase:
@@ -17,7 +20,8 @@ class HistoryDatabase:
     MAX_RETENTION_DAYS = 7  # 保留7天数据
     
     def __init__(self):
-        self.lock = Lock()
+        self.lock = RLock()
+        self._cleanup_counter = 0  # 用于定期 VACUUM
         self.init_database()
         
     def get_connection(self) -> sqlite3.Connection:
@@ -30,33 +34,35 @@ class HistoryDatabase:
         """初始化数据库"""
         with self.lock:
             conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            # 创建历史数据表
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS history (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp INTEGER NOT NULL,
-                    cpu_percent REAL,
-                    memory_percent REAL,
-                    memory_used_gb REAL,
-                    disk_percent REAL,
-                    disk_read_mb REAL,
-                    disk_write_mb REAL,
-                    network_up_mb REAL,
-                    network_down_mb REAL,
-                    gpu_percent REAL,
-                    gpu_memory_percent REAL
-                )
-            ''')
-            
-            # 创建索引
-            cursor.execute('''
-                CREATE INDEX IF NOT EXISTS idx_timestamp ON history(timestamp)
-            ''')
-            
-            conn.commit()
-            conn.close()
+            try:
+                cursor = conn.cursor()
+
+                # 创建历史数据表
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS history (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp INTEGER NOT NULL,
+                        cpu_percent REAL,
+                        memory_percent REAL,
+                        memory_used_gb REAL,
+                        disk_percent REAL,
+                        disk_read_mb REAL,
+                        disk_write_mb REAL,
+                        network_up_mb REAL,
+                        network_down_mb REAL,
+                        gpu_percent REAL,
+                        gpu_memory_percent REAL
+                    )
+                ''')
+
+                # 创建索引
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_timestamp ON history(timestamp)
+                ''')
+
+                conn.commit()
+            finally:
+                conn.close()
     
     def insert_record(self, data: Dict):
         """
@@ -67,45 +73,58 @@ class HistoryDatabase:
         """
         with self.lock:
             conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            timestamp = int(time.time())
-            
-            cursor.execute('''
-                INSERT INTO history 
-                (timestamp, cpu_percent, memory_percent, memory_used_gb,
-                 disk_percent, disk_read_mb, disk_write_mb,
-                 network_up_mb, network_down_mb, gpu_percent, gpu_memory_percent)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                timestamp,
-                data.get('cpu_percent', 0),
-                data.get('memory_percent', 0),
-                data.get('memory_used_gb', 0),
-                data.get('disk_percent', 0),
-                data.get('disk_read_mb', 0),
-                data.get('disk_write_mb', 0),
-                data.get('network_up_mb', 0),
-                data.get('network_down_mb', 0),
-                data.get('gpu_percent', 0),
-                data.get('gpu_memory_percent', 0)
-            ))
-            
-            conn.commit()
-            conn.close()
-            
+            try:
+                cursor = conn.cursor()
+
+                timestamp = int(time.time())
+
+                cursor.execute('''
+                    INSERT INTO history
+                    (timestamp, cpu_percent, memory_percent, memory_used_gb,
+                     disk_percent, disk_read_mb, disk_write_mb,
+                     network_up_mb, network_down_mb, gpu_percent, gpu_memory_percent)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    timestamp,
+                    data.get('cpu_percent', 0),
+                    data.get('memory_percent', 0),
+                    data.get('memory_used_gb', 0),
+                    data.get('disk_percent', 0),
+                    data.get('disk_read_mb', 0),
+                    data.get('disk_write_mb', 0),
+                    data.get('network_up_mb', 0),
+                    data.get('network_down_mb', 0),
+                    data.get('gpu_percent', 0),
+                    data.get('gpu_memory_percent', 0)
+                ))
+
+                conn.commit()
+            finally:
+                conn.close()
+
             # 清理旧数据
             self._cleanup_old_data()
     
     def _cleanup_old_data(self):
         """清理过期数据"""
-        cutoff_time = int(time.time()) - (self.MAX_RETENTION_DAYS * 24 * 3600)
-        
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('DELETE FROM history WHERE timestamp < ?', (cutoff_time,))
-        conn.commit()
-        conn.close()
+        with self.lock:
+            cutoff_time = int(time.time()) - (self.MAX_RETENTION_DAYS * 24 * 3600)
+            conn = self.get_connection()
+            try:
+                cursor = conn.cursor()
+                cursor.execute('DELETE FROM history WHERE timestamp < ?', (cutoff_time,))
+                deleted = cursor.rowcount
+                conn.commit()
+
+                # 每清理 100 次执行一次 VACUUM 回收磁盘空间
+                self._cleanup_counter += 1
+                if deleted > 0 and self._cleanup_counter >= 100:
+                    cursor.execute('VACUUM')
+                    self._cleanup_counter = 0
+            except Exception as e:
+                logger.error("清理历史数据失败: %s", e)
+            finally:
+                conn.close()
     
     def get_recent_data(self, minutes: int = 60) -> List[Dict]:
         """
@@ -118,20 +137,22 @@ class HistoryDatabase:
             历史数据列表
         """
         cutoff_time = int(time.time()) - (minutes * 60)
-        
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT * FROM history 
-            WHERE timestamp >= ?
-            ORDER BY timestamp ASC
-        ''', (cutoff_time,))
-        
-        rows = cursor.fetchall()
-        conn.close()
-        
-        return [dict(row) for row in rows]
+
+        with self.lock:
+            conn = self.get_connection()
+            try:
+                cursor = conn.cursor()
+
+                cursor.execute('''
+                    SELECT * FROM history
+                    WHERE timestamp >= ?
+                    ORDER BY timestamp ASC
+                ''', (cutoff_time,))
+
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
+            finally:
+                conn.close()
     
     def get_data_range(self, start_time: int, end_time: int) -> List[Dict]:
         """
@@ -144,19 +165,21 @@ class HistoryDatabase:
         Returns:
             历史数据列表
         """
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT * FROM history 
-            WHERE timestamp >= ? AND timestamp <= ?
-            ORDER BY timestamp ASC
-        ''', (start_time, end_time))
-        
-        rows = cursor.fetchall()
-        conn.close()
-        
-        return [dict(row) for row in rows]
+        with self.lock:
+            conn = self.get_connection()
+            try:
+                cursor = conn.cursor()
+
+                cursor.execute('''
+                    SELECT * FROM history
+                    WHERE timestamp >= ? AND timestamp <= ?
+                    ORDER BY timestamp ASC
+                ''', (start_time, end_time))
+
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
+            finally:
+                conn.close()
     
     def get_statistics(self, hours: int = 24) -> Dict:
         """
@@ -169,24 +192,27 @@ class HistoryDatabase:
             统计数据字典
         """
         cutoff_time = int(time.time()) - (hours * 3600)
-        
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT 
-                AVG(cpu_percent) as avg_cpu,
-                MAX(cpu_percent) as max_cpu,
-                AVG(memory_percent) as avg_memory,
-                MAX(memory_percent) as max_memory,
-                AVG(network_up_mb) as avg_upload,
-                AVG(network_down_mb) as avg_download
-            FROM history 
-            WHERE timestamp >= ?
-        ''', (cutoff_time,))
-        
-        row = cursor.fetchone()
-        conn.close()
+
+        with self.lock:
+            conn = self.get_connection()
+            try:
+                cursor = conn.cursor()
+
+                cursor.execute('''
+                    SELECT
+                        AVG(cpu_percent) as avg_cpu,
+                        MAX(cpu_percent) as max_cpu,
+                        AVG(memory_percent) as avg_memory,
+                        MAX(memory_percent) as max_memory,
+                        AVG(network_up_mb) as avg_upload,
+                        AVG(network_down_mb) as avg_download
+                    FROM history
+                    WHERE timestamp >= ?
+                ''', (cutoff_time,))
+
+                row = cursor.fetchone()
+            finally:
+                conn.close()
         
         if row:
             return {
@@ -231,18 +257,23 @@ class HistoryDatabase:
     
     def get_record_count(self) -> int:
         """获取记录总数"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT COUNT(*) FROM history')
-        count = cursor.fetchone()[0]
-        conn.close()
-        return count
+        with self.lock:
+            conn = self.get_connection()
+            try:
+                cursor = conn.cursor()
+                cursor.execute('SELECT COUNT(*) FROM history')
+                count = cursor.fetchone()[0]
+                return count
+            finally:
+                conn.close()
     
     def clear_all_data(self):
         """清空所有数据"""
         with self.lock:
             conn = self.get_connection()
-            cursor = conn.cursor()
-            cursor.execute('DELETE FROM history')
-            conn.commit()
-            conn.close()
+            try:
+                cursor = conn.cursor()
+                cursor.execute('DELETE FROM history')
+                conn.commit()
+            finally:
+                conn.close()

@@ -1,12 +1,12 @@
 """
 设置对话框
 """
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox,
     QComboBox, QCheckBox, QPushButton, QGroupBox, QFormLayout,
     QMessageBox, QTabWidget, QWidget
 )
-from PyQt5.QtCore import Qt
+from PySide6.QtCore import Qt
 
 from utils import Config, AutoStartManager
 
@@ -201,7 +201,23 @@ class SettingsDialog(QDialog):
         disk_threshold_layout.addWidget(self.disk_danger_spin)
         disk_threshold_layout.addStretch()
         thresholds_layout.addRow('磁盘:', disk_threshold_layout)
-        
+
+        # GPU 阈值
+        gpu_threshold_layout = QHBoxLayout()
+        self.gpu_warning_spin = QSpinBox()
+        self.gpu_warning_spin.setRange(10, 100)
+        self.gpu_warning_spin.setSuffix('%')
+        gpu_threshold_layout.addWidget(QLabel('警告:'))
+        gpu_threshold_layout.addWidget(self.gpu_warning_spin)
+        gpu_threshold_layout.addSpacing(20)
+        self.gpu_danger_spin = QSpinBox()
+        self.gpu_danger_spin.setRange(10, 100)
+        self.gpu_danger_spin.setSuffix('%')
+        gpu_threshold_layout.addWidget(QLabel('危险:'))
+        gpu_threshold_layout.addWidget(self.gpu_danger_spin)
+        gpu_threshold_layout.addStretch()
+        thresholds_layout.addRow('GPU:', gpu_threshold_layout)
+
         thresholds_group.setLayout(thresholds_layout)
         layout.addWidget(thresholds_group)
         
@@ -370,6 +386,10 @@ class SettingsDialog(QDialog):
         disk_thresholds = thresholds.get('disk', {'warning': 80, 'danger': 95})
         self.disk_warning_spin.setValue(disk_thresholds.get('warning', 80))
         self.disk_danger_spin.setValue(disk_thresholds.get('danger', 95))
+
+        gpu_thresholds = thresholds.get('gpu', {'warning': 70, 'danger': 90})
+        self.gpu_warning_spin.setValue(gpu_thresholds.get('warning', 70))
+        self.gpu_danger_spin.setValue(gpu_thresholds.get('danger', 90))
         
     def get_settings(self):
         """获取当前设置值"""
@@ -408,13 +428,37 @@ class SettingsDialog(QDialog):
                     'disk': {
                         'warning': self.disk_warning_spin.value(),
                         'danger': self.disk_danger_spin.value()
+                    },
+                    'gpu': {
+                        'warning': self.gpu_warning_spin.value(),
+                        'danger': self.gpu_danger_spin.value()
                     }
                 }
             }
         }
         
+    def validate_thresholds(self) -> bool:
+        """校验告警阈值：warning 必须小于 danger"""
+        checks = [
+            ('CPU', self.cpu_warning_spin.value(), self.cpu_danger_spin.value()),
+            ('内存', self.mem_warning_spin.value(), self.mem_danger_spin.value()),
+            ('磁盘', self.disk_warning_spin.value(), self.disk_danger_spin.value()),
+            ('GPU', self.gpu_warning_spin.value(), self.gpu_danger_spin.value()),
+        ]
+        errors = []
+        for name, warning, danger in checks:
+            if warning >= danger:
+                errors.append(f'{name}: 警告阈值 ({warning}%) 必须小于危险阈值 ({danger}%)')
+        if errors:
+            QMessageBox.warning(self, '阈值设置错误', '\n'.join(errors))
+            return False
+        return True
+
     def apply_settings(self):
         """应用设置但不关闭对话框"""
+        if not self.validate_thresholds():
+            return
+
         settings = self.get_settings()
         
         # 保存配置

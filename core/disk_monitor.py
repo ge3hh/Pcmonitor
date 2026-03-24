@@ -3,7 +3,10 @@
 """
 import psutil
 import time
+import logging
 from typing import Dict, List
+
+logger = logging.getLogger(__name__)
 
 
 class DiskMonitor:
@@ -27,8 +30,8 @@ class DiskMonitor:
                     'used_gb': round(usage.used / (1024**3), 2),
                     'free_gb': round(usage.free / (1024**3), 2)
                 })
-            except:
-                pass
+            except Exception as e:
+                logger.debug("读取分区 %s 失败: %s", part.mountpoint, e)
         return partitions
     
     def get_disk_io(self) -> Dict:

@@ -3,7 +3,10 @@ CPU 监控模块
 """
 import psutil
 import time
+import logging
 from typing import Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class CPUMonitor:
@@ -31,8 +34,8 @@ class CPUMonitor:
                     'min': freq.min,
                     'max': freq.max
                 }
-        except:
-            pass
+        except Exception as e:
+            logger.debug("获取 CPU 频率失败: %s", e)
         return None
     
     def get_cpu_stats(self) -> Dict:

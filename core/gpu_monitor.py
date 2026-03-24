@@ -2,6 +2,9 @@
 GPU 监控模块
 """
 from typing import Dict, List, Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class GPUMonitor:
@@ -34,15 +37,16 @@ class GPUMonitor:
                         'memory_percent': round((gpu.memoryUsed / gpu.memoryTotal) * 100, 2) if gpu.memoryTotal > 0 else 0,
                         'temperature': gpu.temperature
                     })
-            except:
-                pass
+            except Exception as e:
+                logger.debug("获取 GPU 信息失败: %s", e)
         
         return gpus
     
     def get_gpu_stats(self) -> Dict:
         """获取 GPU 统计信息"""
+        gpus = self.get_gpu_info()
         return {
-            'gpus': self.get_gpu_info(),
-            'count': len(self.get_gpu_info()),
+            'gpus': gpus,
+            'count': len(gpus),
             'available': self.gputil_available
         }
