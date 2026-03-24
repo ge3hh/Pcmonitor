@@ -3,12 +3,12 @@
 """
 import time
 from datetime import datetime, timedelta
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
     QPushButton, QTableWidget, QTableWidgetItem, QHeaderView,
     QAbstractItemView, QGroupBox, QFormLayout, QMessageBox, QFileDialog
 )
-from PyQt5.QtCore import Qt
+from PySide6.QtCore import Qt
 import pyqtgraph as pg
 
 from utils.database import HistoryDatabase
@@ -54,9 +54,10 @@ class HistoryDialog(QDialog):
         
         # 图表区域
         chart_layout = QHBoxLayout()
-        
-        # CPU 历史图表
-        self.cpu_plot = pg.PlotWidget(title='CPU 历史 (%)')
+
+        # CPU 历史图表 (使用时间轴)
+        cpu_time_axis = pg.DateAxisItem(orientation='bottom')
+        self.cpu_plot = pg.PlotWidget(title='CPU 历史 (%)', axisItems={'bottom': cpu_time_axis})
         self.cpu_plot.setMaximumHeight(150)
         self.cpu_plot.setMenuEnabled(False)
         self.cpu_plot.setMouseEnabled(x=False, y=False)
@@ -66,9 +67,10 @@ class HistoryDialog(QDialog):
         self.cpu_plot.setYRange(0, 100, padding=0)
         self.cpu_curve = self.cpu_plot.plot(pen=pg.mkPen(color='#2196F3', width=2))
         chart_layout.addWidget(self.cpu_plot)
-        
-        # 内存历史图表
-        self.mem_plot = pg.PlotWidget(title='内存历史 (%)')
+
+        # 内存历史图表 (使用时间轴)
+        mem_time_axis = pg.DateAxisItem(orientation='bottom')
+        self.mem_plot = pg.PlotWidget(title='内存历史 (%)', axisItems={'bottom': mem_time_axis})
         self.mem_plot.setMaximumHeight(150)
         self.mem_plot.setMenuEnabled(False)
         self.mem_plot.setMouseEnabled(x=False, y=False)
@@ -199,7 +201,7 @@ class HistoryDialog(QDialog):
         if stats['max_memory'] > 90:
             self.max_mem_label.setStyleSheet('color: #F44336; font-weight: bold;')
         elif stats['max_memory'] > 70:
-            self.max_mem_label.setStyleSheet('color: #FF980O; font-weight: bold;')
+            self.max_mem_label.setStyleSheet('color: #FF9800; font-weight: bold;')
         
     def load_history_data(self):
         """加载历史数据到表格和图表"""
@@ -257,16 +259,16 @@ class HistoryDialog(QDialog):
         
         # 更新图表
         if data:
-            timestamps = list(range(len(data)))
+            timestamps = [row['timestamp'] for row in data]
             cpu_data = [row['cpu_percent'] for row in data]
             mem_data = [row['memory_percent'] for row in data]
-            
+
             self.cpu_curve.setData(timestamps, cpu_data)
             self.mem_curve.setData(timestamps, mem_data)
-            
+
             # 设置 X 轴范围
-            self.cpu_plot.setXRange(0, len(data), padding=0)
-            self.mem_plot.setXRange(0, len(data), padding=0)
+            self.cpu_plot.setXRange(timestamps[0], timestamps[-1], padding=0.02)
+            self.mem_plot.setXRange(timestamps[0], timestamps[-1], padding=0.02)
         
     def refresh_data(self):
         """刷新数据"""

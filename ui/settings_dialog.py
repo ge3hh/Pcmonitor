@@ -1,12 +1,12 @@
 """
 设置对话框
 """
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox,
     QComboBox, QCheckBox, QPushButton, QGroupBox, QFormLayout,
     QMessageBox, QTabWidget, QWidget
 )
-from PyQt5.QtCore import Qt
+from PySide6.QtCore import Qt
 
 from utils import Config, AutoStartManager
 
@@ -413,8 +413,27 @@ class SettingsDialog(QDialog):
             }
         }
         
+    def validate_thresholds(self) -> bool:
+        """校验告警阈值：warning 必须小于 danger"""
+        checks = [
+            ('CPU', self.cpu_warning_spin.value(), self.cpu_danger_spin.value()),
+            ('内存', self.mem_warning_spin.value(), self.mem_danger_spin.value()),
+            ('磁盘', self.disk_warning_spin.value(), self.disk_danger_spin.value()),
+        ]
+        errors = []
+        for name, warning, danger in checks:
+            if warning >= danger:
+                errors.append(f'{name}: 警告阈值 ({warning}%) 必须小于危险阈值 ({danger}%)')
+        if errors:
+            QMessageBox.warning(self, '阈值设置错误', '\n'.join(errors))
+            return False
+        return True
+
     def apply_settings(self):
         """应用设置但不关闭对话框"""
+        if not self.validate_thresholds():
+            return
+
         settings = self.get_settings()
         
         # 保存配置

@@ -2,9 +2,9 @@
 仪表盘组件 - 汽车仪表盘样式
 圆形进度条 + 中心数值显示
 """
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel
-from PyQt5.QtCore import Qt, QRectF
-from PyQt5.QtGui import QPainter, QPen, QColor, QFont, QConicalGradient, QBrush
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
+from PySide6.QtCore import Qt, QRectF
+from PySide6.QtGui import QPainter, QPen, QColor, QFont, QConicalGradient, QBrush
 
 
 class GaugeWidget(QWidget):
@@ -49,7 +49,7 @@ class GaugeWidget(QWidget):
                 self.current_value = float(numbers[0])
             else:
                 self.current_value = 0
-        except:
+        except Exception:
             self.current_value = 0
         
         # 限制在 0-100
@@ -153,7 +153,7 @@ class MinimalModeWidget(QWidget):
     
     def init_ui(self):
         """初始化 UI"""
-        from PyQt5.QtWidgets import QHBoxLayout, QPushButton
+        from PySide6.QtWidgets import QHBoxLayout, QPushButton
         
         self.layout = QHBoxLayout(self)
         self.layout.setSpacing(10)

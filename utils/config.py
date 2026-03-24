@@ -3,7 +3,11 @@
 """
 import json
 import os
+import logging
+from threading import Lock
 from typing import Dict, List
+
+logger = logging.getLogger(__name__)
 
 
 class Config:
@@ -39,6 +43,7 @@ class Config:
     }
     
     def __init__(self):
+        self._lock = Lock()
         self.config = self.load_config()
     
     def load_config(self) -> Dict:
@@ -51,26 +56,75 @@ class Config:
                     for key, value in self.DEFAULT_CONFIG.items():
                         if key not in config:
                             config[key] = value
-                    return config
-            except:
-                pass
+                    return self._validate_config(config)
+            except json.JSONDecodeError as e:
+                logger.warning("配置文件 JSON 解析失败: %s，使用默认配置", e)
+            except Exception as e:
+                logger.warning("加载配置失败: %s，使用默认配置", e)
         return self.DEFAULT_CONFIG.copy()
+
+    def _validate_config(self, config: Dict) -> Dict:
+        """校验配置值的类型和范围，非法值回退到默认值"""
+        defaults = self.DEFAULT_CONFIG
+
+        # update_interval: float, 0.5-60
+        if not isinstance(config.get('update_interval'), (int, float)):
+            config['update_interval'] = defaults['update_interval']
+        else:
+            config['update_interval'] = max(0.5, min(60, float(config['update_interval'])))
+
+        # theme: 'dark' or 'light'
+        if config.get('theme') not in ('dark', 'light'):
+            config['theme'] = defaults['theme']
+
+        # boolean fields
+        for key in ('window_always_on_top', 'start_minimized', 'minimal_mode'):
+            if not isinstance(config.get(key), bool):
+                config[key] = defaults.get(key, False)
+
+        # monitors: dict of str -> bool
+        monitors = config.get('monitors')
+        if not isinstance(monitors, dict):
+            config['monitors'] = defaults['monitors'].copy()
+
+        # alerts.thresholds: warning < danger, 0-100
+        alerts = config.get('alerts', {})
+        if isinstance(alerts, dict):
+            thresholds = alerts.get('thresholds', {})
+            if isinstance(thresholds, dict):
+                for resource in ('cpu', 'memory', 'disk', 'gpu'):
+                    rt = thresholds.get(resource, {})
+                    dt = defaults['alerts']['thresholds'].get(resource, {'warning': 70, 'danger': 90})
+                    if not isinstance(rt, dict):
+                        thresholds[resource] = dt
+                        continue
+                    w = rt.get('warning', dt['warning'])
+                    d = rt.get('danger', dt['danger'])
+                    if not isinstance(w, (int, float)) or not isinstance(d, (int, float)):
+                        thresholds[resource] = dt
+                    elif not (0 <= w < d <= 100):
+                        thresholds[resource] = dt
+
+        return config
     
     def save_config(self):
         """保存配置"""
-        try:
-            with open(self.CONFIG_FILE, 'w', encoding='utf-8') as f:
-                json.dump(self.config, f, indent=2, ensure_ascii=False)
-        except Exception as e:
-            print(f"保存配置失败: {e}")
-    
+        with self._lock:
+            try:
+                with open(self.CONFIG_FILE, 'w', encoding='utf-8') as f:
+                    json.dump(self.config, f, indent=2, ensure_ascii=False)
+            except Exception as e:
+                logger.error("保存配置失败: %s", e)
+
     def get(self, key: str, default=None):
         """获取配置项"""
-        return self.config.get(key, default)
-    
+        with self._lock:
+            return self.config.get(key, default)
+
     def set(self, key: str, value):
         """设置配置项"""
-        self.config[key] = value
+        with self._lock:
+            self.config[key] = value
         self.save_config()
     
     def get_monitor_enabled(self, monitor_name: str) -> bool:

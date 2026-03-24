@@ -1,8 +1,8 @@
 """
 监控小组件 - 带实时图表
 """
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel
-from PyQt5.QtCore import Qt
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
+from PySide6.QtCore import Qt
 import pyqtgraph as pg
 from collections import deque
 
@@ -105,7 +105,7 @@ class MonitorWidget(QWidget):
         try:
             # 尝试直接解析
             return float(value_str.replace('%', '').split()[0])
-        except:
+        except Exception:
             # 如果失败，尝试提取第一个数字
             import re
             numbers = re.findall(r'\d+\.?\d*', value_str)
@@ -119,22 +119,26 @@ class MonitorWidget(QWidget):
             # 更新数值显示
             value = self.value_callback()
             self.value_label.setText(value)
-            
-            # 提取数值用于图表
-            numeric_value = self.extract_numeric_value(value)
-            
+
+            # 优先使用独立的 data_callback 获取图表数值
+            if self.data_callback is not self.value_callback:
+                numeric_value = self.data_callback()
+            else:
+                # 从显示文本中提取
+                numeric_value = self.extract_numeric_value(value)
+
             # 限制在 0-100 范围内
             numeric_value = max(0, min(100, numeric_value))
-            
+
             # 更新历史数据
             self.data_history.append(numeric_value)
-            
+
             # 更新图表
             self.curve.setData(list(self.data_history))
-            
+
             # 根据数值更新颜色
             self.update_color(numeric_value)
-            
+
         except Exception as e:
             self.value_label.setText('Error')
             

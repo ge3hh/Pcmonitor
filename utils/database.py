@@ -5,9 +5,12 @@
 import sqlite3
 import os
 import time
+import logging
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 from threading import Lock
+
+logger = logging.getLogger(__name__)
 
 
 class HistoryDatabase:
@@ -18,6 +21,7 @@ class HistoryDatabase:
     
     def __init__(self):
         self.lock = Lock()
+        self._cleanup_counter = 0  # 用于定期 VACUUM
         self.init_database()
         
     def get_connection(self) -> sqlite3.Connection:
@@ -99,13 +103,24 @@ class HistoryDatabase:
     
     def _cleanup_old_data(self):
         """清理过期数据"""
-        cutoff_time = int(time.time()) - (self.MAX_RETENTION_DAYS * 24 * 3600)
-        
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('DELETE FROM history WHERE timestamp < ?', (cutoff_time,))
-        conn.commit()
-        conn.close()
+        with self.lock:
+            cutoff_time = int(time.time()) - (self.MAX_RETENTION_DAYS * 24 * 3600)
+            try:
+                conn = self.get_connection()
+                cursor = conn.cursor()
+                cursor.execute('DELETE FROM history WHERE timestamp < ?', (cutoff_time,))
+                deleted = cursor.rowcount
+                conn.commit()
+
+                # 每清理 100 次执行一次 VACUUM 回收磁盘空间
+                self._cleanup_counter += 1
+                if deleted > 0 and self._cleanup_counter >= 100:
+                    cursor.execute('VACUUM')
+                    self._cleanup_counter = 0
+
+                conn.close()
+            except Exception as e:
+                logger.error("清理历史数据失败: %s", e)
     
     def get_recent_data(self, minutes: int = 60) -> List[Dict]:
         """

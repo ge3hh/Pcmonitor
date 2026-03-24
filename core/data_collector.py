@@ -2,9 +2,12 @@
 数据收集器 - 在后台线程中采集系统数据
 使用 QThread 避免阻塞主线程
 """
-from PyQt5.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 from typing import Dict, List
 import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 from .cpu_monitor import CPUMonitor
 from .memory_monitor import MemoryMonitor
@@ -17,7 +20,7 @@ class DataCollector(QThread):
     """数据收集线程"""
     
     # 数据收集完成信号
-    data_collected = pyqtSignal(dict)
+    data_collected = Signal(dict)
     
     def __init__(self, enabled_monitors: List[str], interval: float = 1.0):
         """
@@ -47,7 +50,8 @@ class DataCollector(QThread):
         
         # 缓存数据，用于计算差值
         self.last_network_stats = None
-        self.last_disk_stats = None
+        self.last_disk_io = None
+        self.last_disk_io_time = None
         
     def run(self):
         """线程运行循环"""
@@ -78,6 +82,7 @@ class DataCollector(QThread):
                 result['stats']['cpu'] = stats
                 result['values']['cpu'] = stats['cpu_percent']
             except Exception as e:
+                logger.warning("采集 CPU 数据失败: %s", e)
                 result['values']['cpu'] = 0
         
         # 采集内存数据
@@ -87,6 +92,7 @@ class DataCollector(QThread):
                 result['stats']['memory'] = stats
                 result['values']['memory'] = stats['memory']['percent']
             except Exception as e:
+                logger.warning("采集内存数据失败: %s", e)
                 result['values']['memory'] = 0
         
         # 采集磁盘数据
@@ -101,8 +107,26 @@ class DataCollector(QThread):
                     result['values']['disk'] = (total_used / total_size * 100) if total_size > 0 else 0
                 else:
                     result['values']['disk'] = 0
+                # 计算磁盘 IO 速率 (MB/s)
+                io = stats.get('io', {})
+                if io and self.last_disk_io is not None and self.last_disk_io_time is not None:
+                    dt = time.time() - self.last_disk_io_time
+                    if dt > 0:
+                        result['values']['disk_read_mb'] = round(
+                            (io['read_bytes'] - self.last_disk_io['read_bytes']) / dt / (1024**2), 2)
+                        result['values']['disk_write_mb'] = round(
+                            (io['write_bytes'] - self.last_disk_io['write_bytes']) / dt / (1024**2), 2)
+                else:
+                    result['values']['disk_read_mb'] = 0
+                    result['values']['disk_write_mb'] = 0
+                if io:
+                    self.last_disk_io = io
+                    self.last_disk_io_time = time.time()
             except Exception as e:
+                logger.warning("采集磁盘数据失败: %s", e)
                 result['values']['disk'] = 0
+                result['values']['disk_read_mb'] = 0
+                result['values']['disk_write_mb'] = 0
         
         # 采集网络数据
         if 'network' in self.monitors:
@@ -112,6 +136,7 @@ class DataCollector(QThread):
                 result['values']['network_up'] = stats['upload_speed']
                 result['values']['network_down'] = stats['download_speed']
             except Exception as e:
+                logger.warning("采集网络数据失败: %s", e)
                 result['values']['network_up'] = 0
                 result['values']['network_down'] = 0
         
@@ -128,6 +153,7 @@ class DataCollector(QThread):
                     result['values']['gpu'] = 0
                     result['values']['gpu_memory'] = 0
             except Exception as e:
+                logger.warning("采集 GPU 数据失败: %s", e)
                 result['values']['gpu'] = 0
                 result['values']['gpu_memory'] = 0
         

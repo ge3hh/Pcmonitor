@@ -31,13 +31,12 @@ class NetworkMonitor:
         """获取网络速度 (上传, 下载) 单位: MB/s"""
         current_io = self.get_network_io()
         current_time = time.time()
-        
+
         if self.last_io is None or self.last_time is None:
+            # 首次调用：记录基准值，返回 0 避免阻塞
             self.last_io = current_io
             self.last_time = current_time
-            time.sleep(1)
-            current_io = self.get_network_io()
-            current_time = time.time()
+            return 0.0, 0.0
         
         time_delta = current_time - self.last_time
         if time_delta <= 0:

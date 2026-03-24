@@ -2,13 +2,13 @@
 主窗口 UI
 """
 import sys
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QCheckBox, QPushButton, QGridLayout,
-    QSystemTrayIcon, QMenu, QAction, QApplication
+    QSystemTrayIcon, QMenu, QAction, QApplication, QStyle
 )
-from PyQt5.QtCore import QTimer, Qt
-from PyQt5.QtGui import QIcon
+from PySide6.QtCore import QTimer, Qt
+from PySide6.QtGui import QIcon
 
 from core import CPUMonitor, MemoryMonitor, DiskMonitor, NetworkMonitor, GPUMonitor, DataCollector
 from utils import Config, AlertManager
@@ -41,6 +41,7 @@ class MainWindow(QMainWindow):
         self.alert_manager = AlertManager(self.config)
         # 连接告警信号
         self.alert_manager.alert_triggered.connect(self.on_alert_triggered)
+        self.alert_manager.popup_requested.connect(self.on_alert_popup_requested)
         
         # 初始化异步数据收集器
         enabled_monitors = self.config.get_enabled_monitors()
@@ -166,8 +167,11 @@ class MainWindow(QMainWindow):
         
         parent_layout.addLayout(row1_layout)
         
-        # 第二行：网络
-        self.monitor_widgets['network'] = MonitorWidget('网络', self.get_network_value, height=150)
+        # 第二行：网络（使用 data_callback 提供图表数据，将速率映射到 0-100）
+        self.monitor_widgets['network'] = MonitorWidget(
+            '网络', self.get_network_value,
+            data_callback=self.get_network_chart_value, height=150
+        )
         parent_layout.addWidget(self.monitor_widgets['network'])
         
         # 第三行：GPU
@@ -287,8 +291,8 @@ class MainWindow(QMainWindow):
                 'memory_percent': mem_info.get('percent', 0),
                 'memory_used_gb': mem_info.get('used_gb', 0),
                 'disk_percent': values.get('disk', 0),
-                'disk_read_mb': 0,
-                'disk_write_mb': 0,
+                'disk_read_mb': values.get('disk_read_mb', 0),
+                'disk_write_mb': values.get('disk_write_mb', 0),
                 'network_up_mb': values.get('network_up', 0),
                 'network_down_mb': values.get('network_down', 0),
                 'gpu_percent': gpu_percent,
@@ -310,7 +314,7 @@ class MainWindow(QMainWindow):
             # 备用方案：直接采集
             stats = self.monitors['cpu'].get_cpu_stats()
             return f"{stats['cpu_percent']:.1f}%"
-        except:
+        except Exception:
             return "N/A"
             
     def get_memory_value(self) -> str:
@@ -325,7 +329,7 @@ class MainWindow(QMainWindow):
             stats = self.monitors['memory'].get_memory_stats()
             mem = stats['memory']
             return f"{mem['percent']:.1f}% ({mem['used_gb']:.1f}/{mem['total_gb']:.1f} GB)"
-        except:
+        except Exception:
             return "N/A"
             
     def get_disk_value(self) -> str:
@@ -349,7 +353,7 @@ class MainWindow(QMainWindow):
                 total_size = sum(p['total_gb'] for p in partitions)
                 percent = (total_used / total_size * 100) if total_size > 0 else 0
                 return f"{percent:.1f}% ({total_used:.1f}/{total_size:.1f} GB)"
-        except:
+        except Exception:
             pass
         return "N/A"
         
@@ -364,8 +368,26 @@ class MainWindow(QMainWindow):
             # 备用方案：直接采集
             stats = self.monitors['network'].get_network_stats()
             return f"↑ {stats['upload_speed']:.2f} MB/s | ↓ {stats['download_speed']:.2f} MB/s"
-        except:
+        except Exception:
             return "N/A"
+
+    def get_network_chart_value(self) -> float:
+        """获取网络图表数值 (总带宽 MB/s 映射到 0-100)
+
+        使用总带宽 (上传+下载) 并以 100 MB/s 为满量程，
+        映射到 0-100 的范围用于图表显示。
+        """
+        try:
+            if hasattr(self, 'latest_data'):
+                values = self.latest_data.get('values', {})
+                up = values.get('network_up', 0)
+                down = values.get('network_down', 0)
+                total_mbps = up + down
+                # 以 100 MB/s 为满量程映射到 0-100
+                return min(100.0, total_mbps / 100.0 * 100.0)
+        except Exception:
+            pass
+        return 0.0
             
     def get_gpu_value(self) -> str:
         """获取 GPU 显示值"""
@@ -381,7 +403,7 @@ class MainWindow(QMainWindow):
             if gpus:
                 gpu = gpus[0]
                 return f"{gpu['load']:.1f}% | 显存: {gpu['memory_percent']:.1f}%"
-        except:
+        except Exception:
             pass
         return "N/A"
     
@@ -432,7 +454,7 @@ class MainWindow(QMainWindow):
         if hasattr(self.minimal_widget, 'toggle_btn'):
             try:
                 self.minimal_widget.toggle_btn.clicked.disconnect()
-            except:
+            except Exception:
                 pass
         
         # 清空现有仪表盘
@@ -495,7 +517,7 @@ class MainWindow(QMainWindow):
         self.tray_icon.setToolTip('Pcmonitor')
         
         # 使用应用程序图标或系统默认图标
-        app_icon = QApplication.style().standardIcon(QApplication.style().SP_ComputerIcon)
+        app_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon)
         self.tray_icon.setIcon(app_icon)
         self.setWindowIcon(app_icon)
         
@@ -531,7 +553,7 @@ class MainWindow(QMainWindow):
         
     def on_tray_activated(self, reason):
         """托盘图标点击事件"""
-        if reason == QSystemTrayIcon.DoubleClick:
+        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
             if self.isVisible():
                 self.hide()
             else:
@@ -547,17 +569,17 @@ class MainWindow(QMainWindow):
     def show_process_manager(self):
         """显示进程管理器"""
         dialog = ProcessDialog(self)
-        dialog.exec_()
+        dialog.exec()
         
     def show_history(self):
         """显示历史数据"""
         dialog = HistoryDialog(self)
-        dialog.exec_()
+        dialog.exec()
         
     def show_settings(self):
         """显示设置对话框"""
         dialog = SettingsDialog(self)
-        dialog.exec_()
+        dialog.exec()
         
     def apply_settings_from_dialog(self, settings: dict):
         """从设置对话框应用设置"""
@@ -713,6 +735,10 @@ class MainWindow(QMainWindow):
         # 更新状态栏显示告警信息
         self.status_label.setText(f'⚠️ {message}')
         self.status_label.setStyleSheet('color: #FF9800;')
+
+    def on_alert_popup_requested(self, level: str, message: str, title: str):
+        """在主线程中安全显示告警弹窗"""
+        self.alert_manager.show_alert_popup(level, message, self)
         
     def closeEvent(self, event):
         """关闭事件"""
