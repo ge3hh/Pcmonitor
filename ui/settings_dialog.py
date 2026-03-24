@@ -201,7 +201,23 @@ class SettingsDialog(QDialog):
         disk_threshold_layout.addWidget(self.disk_danger_spin)
         disk_threshold_layout.addStretch()
         thresholds_layout.addRow('磁盘:', disk_threshold_layout)
-        
+
+        # GPU 阈值
+        gpu_threshold_layout = QHBoxLayout()
+        self.gpu_warning_spin = QSpinBox()
+        self.gpu_warning_spin.setRange(10, 100)
+        self.gpu_warning_spin.setSuffix('%')
+        gpu_threshold_layout.addWidget(QLabel('警告:'))
+        gpu_threshold_layout.addWidget(self.gpu_warning_spin)
+        gpu_threshold_layout.addSpacing(20)
+        self.gpu_danger_spin = QSpinBox()
+        self.gpu_danger_spin.setRange(10, 100)
+        self.gpu_danger_spin.setSuffix('%')
+        gpu_threshold_layout.addWidget(QLabel('危险:'))
+        gpu_threshold_layout.addWidget(self.gpu_danger_spin)
+        gpu_threshold_layout.addStretch()
+        thresholds_layout.addRow('GPU:', gpu_threshold_layout)
+
         thresholds_group.setLayout(thresholds_layout)
         layout.addWidget(thresholds_group)
         
@@ -370,6 +386,10 @@ class SettingsDialog(QDialog):
         disk_thresholds = thresholds.get('disk', {'warning': 80, 'danger': 95})
         self.disk_warning_spin.setValue(disk_thresholds.get('warning', 80))
         self.disk_danger_spin.setValue(disk_thresholds.get('danger', 95))
+
+        gpu_thresholds = thresholds.get('gpu', {'warning': 70, 'danger': 90})
+        self.gpu_warning_spin.setValue(gpu_thresholds.get('warning', 70))
+        self.gpu_danger_spin.setValue(gpu_thresholds.get('danger', 90))
         
     def get_settings(self):
         """获取当前设置值"""
@@ -408,6 +428,10 @@ class SettingsDialog(QDialog):
                     'disk': {
                         'warning': self.disk_warning_spin.value(),
                         'danger': self.disk_danger_spin.value()
+                    },
+                    'gpu': {
+                        'warning': self.gpu_warning_spin.value(),
+                        'danger': self.gpu_danger_spin.value()
                     }
                 }
             }
@@ -419,6 +443,7 @@ class SettingsDialog(QDialog):
             ('CPU', self.cpu_warning_spin.value(), self.cpu_danger_spin.value()),
             ('内存', self.mem_warning_spin.value(), self.mem_danger_spin.value()),
             ('磁盘', self.disk_warning_spin.value(), self.disk_danger_spin.value()),
+            ('GPU', self.gpu_warning_spin.value(), self.gpu_danger_spin.value()),
         ]
         errors = []
         for name, warning, danger in checks:

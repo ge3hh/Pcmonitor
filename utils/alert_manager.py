@@ -149,8 +149,8 @@ class AlertManager(QObject):
                 # 警告级别 - 普通提示音
                 winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
         except Exception as e:
-            print(f"播放告警声音失败: {e}")
-    
+            logger.error("播放告警声音失败: %s", e)
+
     def show_alert_popup(self, level: str, message: str, parent_widget=None):
         """显示告警弹窗 (应通过信号在主线程中调用)"""
         try:
@@ -159,7 +159,7 @@ class AlertManager(QObject):
             else:
                 QMessageBox.warning(parent_widget, '⚠️ 资源告警 - 警告', message)
         except Exception as e:
-            print(f"显示告警弹窗失败: {e}")
+            logger.error("显示告警弹窗失败: %s", e)
     
     def check_all_monitors(self, data: Dict, parent_widget=None):
         """检查所有监控项

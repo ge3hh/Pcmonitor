@@ -44,8 +44,9 @@ class GPUMonitor:
     
     def get_gpu_stats(self) -> Dict:
         """获取 GPU 统计信息"""
+        gpus = self.get_gpu_info()
         return {
-            'gpus': self.get_gpu_info(),
-            'count': len(self.get_gpu_info()),
+            'gpus': gpus,
+            'count': len(gpus),
             'available': self.gputil_available
         }

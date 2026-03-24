@@ -4,6 +4,7 @@
 import json
 import os
 import logging
+import copy
 from threading import Lock
 from typing import Dict, List
 
@@ -61,7 +62,7 @@ class Config:
                 logger.warning("配置文件 JSON 解析失败: %s，使用默认配置", e)
             except Exception as e:
                 logger.warning("加载配置失败: %s，使用默认配置", e)
-        return self.DEFAULT_CONFIG.copy()
+        return copy.deepcopy(self.DEFAULT_CONFIG)
 
     def _validate_config(self, config: Dict) -> Dict:
         """校验配置值的类型和范围，非法值回退到默认值"""
