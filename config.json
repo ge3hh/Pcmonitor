@@ -1,0 +1,38 @@
+{
+  "monitors": {
+    "cpu": true,
+    "memory": true,
+    "disk": true,
+    "network": true,
+    "gpu": true
+  },
+  "update_interval": 1.0,
+  "theme": "dark",
+  "window_always_on_top": false,
+  "start_minimized": false,
+  "alerts": {
+    "enabled": false,
+    "sound_enabled": true,
+    "popup_enabled": true,
+    "enabled_monitors": [
+      "cpu",
+      "memory"
+    ],
+    "thresholds": {
+      "cpu": {
+        "warning": 70,
+        "danger": 90
+      },
+      "memory": {
+        "warning": 70,
+        "danger": 90
+      },
+      "disk": {
+        "warning": 80,
+        "danger": 95
+      }
+    }
+  },
+  "minimal_mode": true,
+  "auto_start": false
+}

@@ -22,7 +22,20 @@ class Config:
         'update_interval': 1.0,
         'theme': 'dark',
         'window_always_on_top': False,
-        'start_minimized': False
+        'start_minimized': False,
+        'minimal_mode': False,  # 极简模式
+        'alerts': {
+            'enabled': True,
+            'sound_enabled': True,
+            'popup_enabled': True,
+            'enabled_monitors': ['cpu', 'memory'],  # 启用了告警的监控项
+            'thresholds': {
+                'cpu': {'warning': 70, 'danger': 90},
+                'memory': {'warning': 70, 'danger': 90},
+                'disk': {'warning': 80, 'danger': 95},
+                'gpu': {'warning': 70, 'danger': 90}
+            }
+        }
     }
     
     def __init__(self):
